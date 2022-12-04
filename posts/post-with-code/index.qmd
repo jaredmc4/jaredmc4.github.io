@@ -1,9 +1,204 @@
 ---
-title: "Post With Code"
-author: "Harlow Malloc"
-date: "2022-10-20"
-categories: [news, code, analysis]
-image: "image.jpg"
+title: "CBS Survivor Project"
+author: "Jared Clark"
+output: html_document
+date: "2022-11-01"
 ---
 
-This is a post with executable code.
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, root.dir="/Users/jaredclark/Downloads/archive (12)")
+```
+
+```{r, warning=FALSE, message=FALSE}
+library(plotly)
+library(glmtoolbox)
+library(tidyverse)
+library(stats)
+```
+
+
+```{r libraries, include=FALSE}
+# libraries
+```
+
+## Define objectives of writeup
+
+This is a project investigating the CBS Survivor data set. This data set includes information on the the contestants from the first 42 seasons of the show. In analyzing this data set, I explore methods for defining factors using `forcats`. I also explain my first experimentation with creating interactive plots using `plotly` in this post. 
+
+
+## Data (Munging - EDA stage)
+
+I started by importing the data using the `read_csv` function. This approach was nice since the table was created as a tibble. Although most of the information I was interested in was contained in a single table, I wanted the practice merging tables using the `tidyverse`. The first table contained 767 rows, one for each contestant, while the second table only contained a single row for each of the 42 seasons. Where I would normally use a loop to merger these tables of differing sizes, I was able to combine the tables with a single line in the `tidyverse`.
+
+```{r}
+#These are the data import steps, I wanted the merging practice but there
+#weren't too many interesting variables in the second table
+survdat_1 <- read_csv("/Users/jaredclark/Downloads/archive (12)/contestant_table.csv")
+survdat_2 <- read_csv("/Users/jaredclark/Downloads/archive (12)/season_table.csv")[,c(1,22)]
+
+#Here we are combining the tables based on the season number
+survdat <- inner_join(survdat_1, survdat_2, by="num_season")
+```
+
+After importing the data, I spent some time looking at the structure of the data table. The `hometown` variable contained quite a bit of information, but was too specific to be useful in data analysis. I started by removing the last two characters in the string in order to create a state variable. At this point, with 49 unique factor levels, I saw an opportunity to explore another new package. Use of the `forcats` package allowed me to combine many of the factor levels so that I ended up with 5 factor levels. While I would likely combine the factors in a more meaningful way in a more in depth analysis, location didn't seem to matter in predicting ending position and this gave me an opportunity to work with the factor specific functions in the `forcats` library.
+
+```{r}
+#This function was defined in the following thread
+#https://stackoverflow.com/questions/7963898/extracting-the-last-
+#n-characters-from-a-string-in-r
+substrRight <- function(x, n){
+  substr(x, nchar(x)-n+1, nchar(x))
+}
+
+#defining a state variable
+survdat$state <- as.factor(substrRight(survdat$hometown, 2))
+table(survdat$state)
+
+#Keeping the 4 largest factors separate and then grouping the rest
+survdat$state2 <- fct_lump(survdat$state, 4)
+table(survdat$state2)
+
+```
+
+```{r, echo=FALSE}
+### Data inport/gathering
+```
+
+### Data summarization
+
+In this step, I summarize the relationships between the variables in the data set. In particular, I am interested in potential relationships with finishing position since this is the variable I am hoping to model. I look at the average finishing position for each of the states and for each gender. I also looked at the average finishing position for some of the other factors, but these were commented to reduce the amount of output. It doesn't seem like any of these factors have a meaningful relationship with finishing position, though no formal statistical tests were conducted at this step.
+
+```{r}
+#average finishing position for levels of some of the factors
+#aggregate(finish~lgbt, data=survdat, mean)
+#aggregate(finish~poc, data=survdat, mean)
+
+aggregate(finish~state2, data=survdat, mean)
+aggregate(finish~gender, data=survdat, mean)
+```
+
+
+```{r}
+#The correlation between some of the quantitative variables and 
+#the finishing position
+cor(survdat$votes_against,survdat$finish)
+cor(survdat$age,survdat$finish)
+
+```
+
+
+### Data visualization 
+
+The boxplot in this section was created using the `ggplot2` library. Notice that there doesn't seem to be any relationship between a contestant's state and their finishing position. While we have grouped many of the states, even if being from one of the less populous states had a great impact on finishing position, there likely wouldn't be enough contestants from that state to even recognize the pattern.
+
+```{r, message=FALSE, warning=FALSE}
+ggplot(survdat, aes(state2, finish)) + geom_boxplot() + xlab("State") +
+  ylab("Finishing Position")
+```
+
+The interactive scatter plot displays contestant age along the x-axis with finishing position on the y-axis. This plot was made using the `plotly` library. As can be seen from the code, the syntax for this package does not seem to be overly complex and a more in-depth exploration of the package could be interesting for a future project. The scatter plot doesn't seem to suggest any interesting relationship between age and finishing position. In fact, the most meaningful feature of this plot is that the number of contestants can be seen to decrease with age.
+
+```{r, message=FALSE, warning=FALSE}
+fig <- plot_ly(x=survdat$age, y=survdat$finish) 
+fig
+```
+
+
+#### transformations - center/scale - dummy variables
+
+```{r}
+state.i <- model.matrix(lm(survdat$finish~-1+survdat$state2))
+gender.i <- model.matrix(lm(survdat$finish~-1+survdat$gender))
+head(state.i)
+head(gender.i)
+```
+
+
+#### correlation analysis
+
+```{r}
+survdat.num <- survdat[,c(2,6,8,9,10,11,12,13,14)]
+cor(survdat.num)
+cor(survdat$finish, as.numeric(as.factor(survdat$gender)))
+```
+
+## Modeling
+
+The original analysis goal for this data set was to create a model that could predict the finishing order for a new season. Since this analysis proved to be complex, a simpler model was build to predict whether a contestant would end up in the top 5 for the season. As evidence by the exploratory data analysis in the previous sections, it is not necessarily suspected that the demographic variables will be able to predict winning probabilities well.
+
+In creating a model I first built a dummy variable to indicate whether a contestant finished in the top 5. The next step was to build an overfit logistic regression model. While this model didn't include every variable in the data set, it contained most of the demographic information that could be used for predictions in a future season. A stepwise variable selection algorithm was used to determine a best model, using AIC as the variable selection criterion. The best model contained only the age variable.
+
+In predicting for the 42nd season, the logistic regression model was able to identify 3 of the top 5 contestants correctly. The model did surprisingly well, though with such a small test set this could have been easily due to chance. Adding the 42nd season to the training set and predicting for the next season of the show would further indicate how well the model is able to predict.
+
+```{r}
+train <- survdat[survdat$num_season < 42,]
+test <- survdat[survdat$num_season == 42,]
+
+top5 <- ifelse(train$finish <= 5, 1, 0)
+glm1 <- glm(top5~train$age+train$poc+train$gender+train$state2+train$lgbt, family="binomial")
+
+backwards <- step(glm1,trace=0, direction="both")
+
+age <- train$age
+glmcv <- glm1 <- glm(top5~age, family="binomial")
+preds <- predict(glmcv, newdata=data.frame("age"=test$age), type="response")
+order(preds)
+order(test$finish)
+
+```
+
+
+
+
+```{r, echo=FALSE, eval=FALSE}
+set.seed(460)
+probs <- survdat$normalized_finish
+win_vec <- numeric(nrow(survdat))
+for(j in 1:nrow(survdat)){
+  win_vec[j] <- sample(c(0,1),1,prob=c(1-probs[j],probs[j]))
+}
+
+glm1 <- glm(win_vec~survdat$age, family="binomial")
+glm2 <- glm(win_vec~survdat$age + survdat$state2, family="binomial")
+glm3 <- glm(win_vec~survdat$age + survdat$poc, family="binomial")
+glm4 <- glm(win_vec~survdat$age + survdat$poc + survdat$gender, family="binomial")
+glm5 <- glm(win_vec~survdat$age  + survdat$gender, family="binomial")
+
+glm6 <- glm(win_vec~survdat$age + survdat$poc + survdat$lgbt, family="binomial")
+glm7 <- glm(win_vec~survdat$age + survdat$lgbt, family="binomial")
+glm8 <- glm(win_vec~survdat$age + survdat$poc + survdat$votes_against, family="binomial")
+
+predict(glm3, type="response")
+
+AIC(glm1)
+AIC(glm3)
+AIC(glm4)
+AIC(glm5)
+AIC(glm6)
+AIC(glm7)
+
+AIC(glm8)
+
+anova(glm1)
+
+train <- survdat[survdat$num_season < 42,]
+test <- survdat[survdat$num_season == 42,]
+
+age <- train$age; poc <-  train$poc 
+
+glm_cv <- glm(win_vec[1:nrow(train)]~age + poc, family="binomial")
+
+preds <- predict(glm_cv, newdata=data.frame("age"=test$age, "poc"=test$poc), type="response")
+which.max(preds)
+which.min(preds)
+
+
+test[2,]
+test[17,]
+```
+
+
+
+
+## Evaluation - Discussion of what you saw/did
+
