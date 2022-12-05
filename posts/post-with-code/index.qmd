@@ -9,6 +9,17 @@ date: "2022-11-01"
 knitr::opts_chunk$set(echo = TRUE, root.dir="/Users/jaredclark/Downloads/archive (12)")
 ```
 
+
+```{r libraries, include=FALSE}
+# libraries
+```
+
+## Project Objectives
+
+This is a project investigating the CBS Survivor data set. The data set is publicly available through Kaggle. This data set includes information on the the reality show contestants from the first 42 seasons of the show. In analyzing this data set, I explore methods for defining factors using `forcats`. I also explain my first experimentation with creating interactive plots using `plotly` in this post. In future analyses I would like to explore methods for modeling the end of season rankings; however, I close this analysis by reporting a relatively simple logistic regression model since tools for exploratory data analysis are the main focus of this post.
+
+I'll start this post by including the libraries that were used here:
+
 ```{r, warning=FALSE, message=FALSE}
 library(plotly)
 library(glmtoolbox)
@@ -17,24 +28,15 @@ library(stats)
 ```
 
 
-```{r libraries, include=FALSE}
-# libraries
-```
+## Data Import and Feature Engineering
 
-## Define objectives of writeup
-
-This is a project investigating the CBS Survivor data set. This data set includes information on the the contestants from the first 42 seasons of the show. In analyzing this data set, I explore methods for defining factors using `forcats`. I also explain my first experimentation with creating interactive plots using `plotly` in this post. 
-
-
-## Data (Munging - EDA stage)
-
-I started by importing the data using the `read_csv` function. This approach was nice since the table was created as a tibble. Although most of the information I was interested in was contained in a single table, I wanted the practice merging tables using the `tidyverse`. The first table contained 767 rows, one for each contestant, while the second table only contained a single row for each of the 42 seasons. Where I would normally use a loop to merger these tables of differing sizes, I was able to combine the tables with a single line in the `tidyverse`.
+I started by importing the data using the `read_csv` function. This approach was nice since the table was created as a tibble. Although most of the information I was interested in was contained in a single table, I wanted the practice merging tables using the `tidyverse`. The first table contained 767 rows, one for each contestant, while the second table only contained a single row for each of the 42 seasons. Where I would normally use a loop to merge these tables of differing sizes, I was able to combine the tables with a single line of code through use of the `tidyverse`.
 
 ```{r}
 #These are the data import steps, I wanted the merging practice but there
 #weren't too many interesting variables in the second table
-survdat_1 <- read_csv("/Users/jaredclark/Downloads/archive (12)/contestant_table.csv")
-survdat_2 <- read_csv("/Users/jaredclark/Downloads/archive (12)/season_table.csv")[,c(1,22)]
+survdat_1 <- read_csv("contestant_table.csv")
+survdat_2 <- read_csv("season_table.csv")[,c(1,22)]
 
 #Here we are combining the tables based on the season number
 survdat <- inner_join(survdat_1, survdat_2, by="num_season")
@@ -61,12 +63,12 @@ table(survdat$state2)
 ```
 
 ```{r, echo=FALSE}
-### Data inport/gathering
+### Data import/gathering
 ```
 
 ### Data summarization
 
-In this step, I summarize the relationships between the variables in the data set. In particular, I am interested in potential relationships with finishing position since this is the variable I am hoping to model. I look at the average finishing position for each of the states and for each gender. I also looked at the average finishing position for some of the other factors, but these were commented to reduce the amount of output. It doesn't seem like any of these factors have a meaningful relationship with finishing position, though no formal statistical tests were conducted at this step.
+In this step, I summarize the relationships between the variables in the data set. In particular, I am interested in potential relationships with finishing position since this is the variable I am hoping to model. I look at the average finishing position for each of the states and for each gender. I also looked at the average finishing position across levels of some of the other factors, but these were commented out in the code to reduce the amount of output. It doesn't seem like any of these factors have a meaningful relationship with finishing position, though no formal statistical tests were conducted at this step.
 
 ```{r}
 #average finishing position for levels of some of the factors
@@ -77,6 +79,7 @@ aggregate(finish~state2, data=survdat, mean)
 aggregate(finish~gender, data=survdat, mean)
 ```
 
+At this point, I also want to consider the relationships between the quantitative variables. Here I look at the correlation between age and finishing position. It is interesting to note that even age doesn't seem to matter much in predicting the finishing position. I also looked at the correlation between finishing position and the number of votes submitted against a contestant hoping to find a strong correlation. Since the number of votes is not a piece of demographic information that can be collected before a new season, it will not be included in the modeling step; however, the low correlation would suggest that it is rather difficult to predict finishing position with any of the variables included in the data set.
 
 ```{r}
 #The correlation between some of the quantitative variables and 
@@ -86,6 +89,13 @@ cor(survdat$age,survdat$finish)
 
 ```
 
+As the final step in producing summary statistics, I expanded my search for strong correlations by producing the full correlation table. We do see some moderate correlations for some of the variables indicating race, however, none of the variables appear to share a strong relationship with finishing position.
+
+```{r}
+survdat.num <- survdat[,c(2,6,8,9,10,11,12,13,14)]
+cor(survdat.num)
+cor(survdat$finish, as.numeric(as.factor(survdat$gender)))
+```
 
 ### Data visualization 
 
@@ -96,7 +106,7 @@ ggplot(survdat, aes(state2, finish)) + geom_boxplot() + xlab("State") +
   ylab("Finishing Position")
 ```
 
-The interactive scatter plot displays contestant age along the x-axis with finishing position on the y-axis. This plot was made using the `plotly` library. As can be seen from the code, the syntax for this package does not seem to be overly complex and a more in-depth exploration of the package could be interesting for a future project. The scatter plot doesn't seem to suggest any interesting relationship between age and finishing position. In fact, the most meaningful feature of this plot is that the number of contestants can be seen to decrease with age.
+This interactive scatter plot displays contestant age along the x-axis with finishing position on the y-axis. This plot was made using the `plotly` library. As can be seen from the code, the syntax for this package does not seem to be overly complex and a more in-depth exploration of the package could be interesting for a future project. The scatter plot doesn't seem to suggest any interesting relationship between age and finishing position. In fact, the most meaningful feature of this plot is that the number of contestants can be seen to decrease with age.
 
 ```{r, message=FALSE, warning=FALSE}
 fig <- plot_ly(x=survdat$age, y=survdat$finish) 
@@ -104,9 +114,7 @@ fig
 ```
 
 
-#### transformations - center/scale - dummy variables
-
-```{r}
+```{r, echo=FALSE, eval=FALSE}
 state.i <- model.matrix(lm(survdat$finish~-1+survdat$state2))
 gender.i <- model.matrix(lm(survdat$finish~-1+survdat$gender))
 head(state.i)
@@ -114,17 +122,9 @@ head(gender.i)
 ```
 
 
-#### correlation analysis
-
-```{r}
-survdat.num <- survdat[,c(2,6,8,9,10,11,12,13,14)]
-cor(survdat.num)
-cor(survdat$finish, as.numeric(as.factor(survdat$gender)))
-```
-
 ## Modeling
 
-The original analysis goal for this data set was to create a model that could predict the finishing order for a new season. Since this analysis proved to be complex, a simpler model was build to predict whether a contestant would end up in the top 5 for the season. As evidence by the exploratory data analysis in the previous sections, it is not necessarily suspected that the demographic variables will be able to predict winning probabilities well.
+The original analysis goal for this data set was to create a model that could predict the finishing order for a new season. Since this analysis proved to be complex, a simpler model was built to predict whether a contestant would end up in the top 5 for the season. As evidenced by the exploratory data analysis in the previous sections, it is not necessarily suspected that the demographic variables will be able to predict winning probabilities well.
 
 In creating a model I first built a dummy variable to indicate whether a contestant finished in the top 5. The next step was to build an overfit logistic regression model. While this model didn't include every variable in the data set, it contained most of the demographic information that could be used for predictions in a future season. A stepwise variable selection algorithm was used to determine a best model, using AIC as the variable selection criterion. The best model contained only the age variable.
 
@@ -146,8 +146,6 @@ order(preds)
 order(test$finish)
 
 ```
-
-
 
 
 ```{r, echo=FALSE, eval=FALSE}
@@ -200,5 +198,9 @@ test[17,]
 
 
 
-## Evaluation - Discussion of what you saw/did
+## Discussion
+
+This post explored some packages for exploratory data analysis. I appreciated the ease in redefining factor levels through the `forcats` package. Another package that I found surprisingly easy to use was the `plotly` library. This package allows for creation of interactive plots, which is nice since it ensures that none of the information from the data is lost.
+
+In the end, I was able to fit a simple model to the CBS Survivor data set. With the release of future seasons, I hope to further improve the predictive accuracy of the model. I would also like to explore more complex methods for analyzing this data so that I can build a model to predict the full end of season ranking.
 
